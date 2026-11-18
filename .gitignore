@@ -1,0 +1,9 @@
+build/
+dist/
+_t/
+_test/
+*_test/
+state/
+payload/mint.jar
+*.bak-jblocal
+*.tmp
