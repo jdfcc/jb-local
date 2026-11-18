@@ -3,7 +3,7 @@
 
   One command (no download, no temp file):
 
-      irm https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.ps1 | iex
+      irm https://github.com/jdfcc/jb-local/releases/download/v1.0.2/install.ps1 | iex
 
   There is deliberately no param() block: Invoke-Expression cannot bind
   parameters. Options therefore come from
@@ -36,7 +36,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $Cfg = [ordered]@{
     Repo         = 'jdfcc/jb-local'
-    Tag          = 'v1.0.1'
+    Tag          = 'v1.0.2'
     InstallDir   = (Join-Path $env:ProgramData 'jb-local')
     LayoutRoot   = (Join-Path $env:LOCALAPPDATA 'JetBrains')
     ConfigRoot   = (Join-Path $env:APPDATA 'JetBrains')

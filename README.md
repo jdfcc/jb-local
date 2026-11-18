@@ -22,7 +22,7 @@ build.ps1                本地打包：mint.jar → payload.zip → SHA256SUMS.
 ### Windows：一条命令
 
 ```powershell
-irm https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.ps1 | iex
+irm https://github.com/jdfcc/jb-local/releases/download/v1.0.2/install.ps1 | iex
 ```
 
 校验并解包资产 → 装 agent → **在本机生成身份与 `power.conf`** → 给每个已装产品签 key → 改 vmoptions；不是管理员会弹 UAC 重跑自己（重新 `irm` 同一地址）。
@@ -56,20 +56,20 @@ irm "$env:JB_LOCAL_BASE_URL/install.ps1" | iex
 ### Windows：存盘执行（可先核对哈希）
 
 ```powershell
-irm https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.ps1 -OutFile install.ps1
+irm https://github.com/jdfcc/jb-local/releases/download/v1.0.2/install.ps1 -OutFile install.ps1
 Get-FileHash .\install.ps1 -Algorithm SHA256      # 与 release 说明里的值比对
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -DryRun
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
 ```
 
-参数：`-Repo jdfcc/jb-local -Tag v1.0.1 -InstallDir C:\ProgramData\jb-local -LicenseName "你的名字" -Expiry 2099-12-31`
+参数：`-Repo jdfcc/jb-local -Tag v1.0.2 -InstallDir C:\ProgramData\jb-local -LicenseName "你的名字" -Expiry 2099-12-31`
 可选：`-SkipHiding`、`-NoVmOptions`、`-DryRun`、`-NoElevate`、`-LocalPayload <dir>`。
 
 ### Linux / macOS
 
 ```bash
-curl -fsSL -o install.sh https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.sh
+curl -fsSL -o install.sh https://github.com/jdfcc/jb-local/releases/download/v1.0.2/install.sh
 sha256sum install.sh                              # 与 release 说明比对
 sudo bash install.sh                              # 或 --dry-run / --uninstall / --from-dir
 ```
@@ -86,7 +86,7 @@ $env:JB_LOCAL_PAYLOAD='.\dist'; irm .\install.ps1 | iex     # 或者 .\install.p
 ### 卸载
 
 ```powershell
-$env:JB_LOCAL_UNINSTALL=1; irm https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.ps1 | iex
+$env:JB_LOCAL_UNINSTALL=1; irm https://github.com/jdfcc/jb-local/releases/download/v1.0.2/install.ps1 | iex
 # 或存盘：.\install.ps1 -Uninstall
 # Linux: sudo bash install.sh --uninstall
 ```
