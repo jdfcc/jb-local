@@ -1,14 +1,6 @@
 # jb-local
 
-把 `irm ckey.run | iex` 那套东西，变成**你自己的、可审计、可校验、不依赖任何第三方服务器**的本地版本。
-
-- 只从**你自己的 GitHub Release** 下载资产，不再访问 ckey.run；
-- 下载全部走 `SHA256SUMS.txt` 校验，装之前就能发现被换包；
-- **私钥不出本机**：每台机器首次安装时现场生成 4096-bit 身份并推导 `power.conf`，发布物里没有任何密钥；
-- 许可证离线签发，没有 `generateLicense` 接口、没有遥测；
-- 安装/卸载可回滚，`vmoptions` 会留 `.bak-jblocal` 备份。
-
-原理见第 6 节。
+把 `irm ckey.run | iex` 那套东西，变成本地版本。
 
 ---
 
@@ -25,36 +17,50 @@ build.ps1                本地打包：mint.jar → payload.zip → SHA256SUMS.
 .github/workflows/       tag 触发，构建 + 自检 + 发 Release
 ```
 
-## 2. 三步变成"你的"
+## 2. 安装
 
-1. **默认值已填好**：`jdfcc/jb-local`、`v1.0.0`（`scripts/install.ps1` 的 `$Repo`/`$Tag`、`scripts/install.sh` 的 `REPO_DEFAULT`/`TAG_DEFAULT`）。换仓库/换版本时才需要改。
-2. **出包**：本地 `pwsh ./build.ps1`，或 `git tag v1.0.0 && git push --tags` 让 Actions 出 Release。
-3. **安装**（见下）。
-
-## 3. 安装
-
-> 想直接管道执行也可以（**注意：这又回到了你担心的投毒面**）：
-> `curl -fsSL https://github.com/jdfcc/jb-local/releases/download/v1.0.0/install.sh | sudo bash -s -- --repo jdfcc/jb-local --tag v1.0.0`
-> 更稳的是下面这种"下载→核对哈希→执行"。
-
-### Windows（推荐：下载→核对哈希→执行）
+### Windows：一条命令
 
 ```powershell
-$u = 'https://github.com/jdfcc/jb-local/releases/download/v1.0.0/install.ps1'
-irm $u -OutFile install.ps1
-Get-FileHash .\install.ps1 -Algorithm SHA256      # 与 release 说明里的值比对
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+irm https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.ps1 | iex
 ```
 
-参数：`-Repo jdfcc/jb-local -Tag v1.0.0 -InstallDir C:\ProgramData\jb-local -LicenseName "你的名字" -Expiry 2099-12-31`
-可选：`-SkipHiding`（不装 privacy/hideme，隐蔽性下降但兼容性最好）、`-NoVmOptions`（只写 key 和 agent，不动 vmoptions）、`-DryRun`。
+校验并解包资产 → 装 agent → **在本机生成身份与 `power.conf`** → 给每个已装产品签 key → 改 vmoptions；不是管理员会弹 UAC 重跑自己（重新 `irm` 同一地址）。
+
+`irm | iex` 不能传参，选项走环境变量（同一会话里设一次即可）：
+
+| 需求 | 写法 |
+|---|---|
+| 先看流程、不落盘 | `$env:JB_LOCAL_DRYRUN=1; irm ... \| iex` |
+| 不装 privacy/hideme（兼容性优先） | `$env:JB_LOCAL_SKIP_HIDING=1; irm ... \| iex` |
+| 自定义安装目录 | `$env:JB_LOCAL_INSTALL_DIR='D:\jb-local'; irm ... \| iex` |
+| 许可证名 / 到期 | `$env:JB_LOCAL_NAME='张三'; $env:JB_LOCAL_EXPIRY='2099-12-31'; irm ... \| iex` |
+| 只写 key、不动 vmoptions | `$env:JB_LOCAL_NO_VMOPTIONS=1; irm ... \| iex` |
+| 卸载 | `$env:JB_LOCAL_UNINSTALL=1; irm ... \| iex` |
+| 完全离线 | `$env:JB_LOCAL_PAYLOAD='D:\dist'; irm ... \| iex` |
+| 排错（打印生效配置） | `$env:JB_LOCAL_DEBUG=1; irm ... \| iex` |
+
+其余可覆盖项：`JB_LOCAL_REPO` `JB_LOCAL_TAG` `JB_LOCAL_LAYOUT_ROOT` `JB_LOCAL_CONFIG_ROOT` `JB_LOCAL_NOELEVATE`。
+
+### Windows：存盘执行（可先核对哈希）
+
+```powershell
+irm https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.ps1 -OutFile install.ps1
+Get-FileHash .\install.ps1 -Algorithm SHA256      # 与 release 说明里的值比对
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -DryRun
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
+```
+
+参数：`-Repo jdfcc/jb-local -Tag v1.0.1 -InstallDir C:\ProgramData\jb-local -LicenseName "你的名字" -Expiry 2099-12-31`
+可选：`-SkipHiding`、`-NoVmOptions`、`-DryRun`、`-NoElevate`、`-LocalPayload <dir>`。
 
 ### Linux / macOS
 
 ```bash
-curl -fsSL -o install.sh https://github.com/jdfcc/jb-local/releases/download/v1.0.0/install.sh
+curl -fsSL -o install.sh https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.sh
 sha256sum install.sh                              # 与 release 说明比对
-sudo bash install.sh --repo jdfcc/jb-local --tag v1.0.0
+sudo bash install.sh                              # 或 --dry-run / --uninstall / --from-dir
 ```
 
 ### 完全离线
@@ -62,37 +68,21 @@ sudo bash install.sh --repo jdfcc/jb-local --tag v1.0.0
 把 `payload.zip`、`SHA256SUMS.txt`、`install.ps1` 拷到目标机：
 
 ```powershell
-.\install.ps1 -LocalPayload .\dist
+$env:JB_LOCAL_PAYLOAD='.\dist'; irm .\install.ps1 | iex     # 或者 .\install.ps1 -LocalPayload .\dist
 # Linux: sudo bash install.sh --from-dir /path/to/dist
 ```
 
 ### 卸载
 
 ```powershell
-.\install.ps1 -Uninstall
+$env:JB_LOCAL_UNINSTALL=1; irm https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.ps1 | iex
+# 或存盘：.\install.ps1 -Uninstall
 # Linux: sudo bash install.sh --uninstall
 ```
 
-卸载会删 key、恢复 `vmoptions` 备份、删安装目录；`disabled_plugins.txt` 里被去掉的 `com.intellij.modules.ultimate` 需要手动加回（脚本不猜）。
+卸载会删 key、恢复 `vmoptions` 备份、删安装目录；`disabled_plugins.txt` 里被去掉的 `com.intellij.modules.ultimate` 需要手动加回。
 
-## 4. 为什么不用 `curl ... | bash`
-
-你来这套东西的初衷就是"怕有人投毒"，而 `curl | bash` 恰好把信任交给**执行那一刻的响应**：DNS/CDN/仓库权限任何一环变了，你都在以管理员权限跑别人的代码。
-
-更稳的链路是：
-
-1. 固定 `--tag`（不要 `latest`），最好固定到 **commit SHA** 的资产地址；
-2. 下载到本地，**核对 SHA256**，再执行；
-3. 仓库侧开 **tag protection**、用 **immutable releases**，并把每个版本的 `SHA256SUMS.txt` **提交进 git**（`checksums/v1.0.0.txt`）——资产可以被有写权限的人替换，但被 tag 冻结的提交不行；能再加上 `git tag -s` 签名更好。
-
-`install.ps1` / `install.sh` 本身也会把校验值打出来，方便你核对：
-
-```
-[jb-local] sha256 ok: payload.zip <hash>
-[jb-local] installer sha256: <hash>
-```
-
-## 5. 关键参数
+## 3. 关键参数
 
 | 文件 / 参数 | 作用 | 什么时候要改 |
 |---|---|---|
@@ -102,7 +92,7 @@ sudo bash install.sh --repo jdfcc/jb-local --tag v1.0.0
 | `--license-name` / `-LicenseName` | 许可证显示名 | 随意 |
 | `-InstallDir` | 安装目录，默认 `C:\ProgramData\jb-local` | 想换位置 |
 
-## 6. 它到底怎么工作（30 秒版）
+## 4. 原理
 
 1. `ja-netfilter.jar` 作为 `-javaagent` 进 JVM，用 ASM 改写 `java.math.BigInteger.oddModPow`——RSA 验签的必经函数。
 2. 安装时现场生成 4096-bit 身份和一张证书：**issuer 写成 `CN=JetProfile CA`，但用你自己的私钥签**。同时算出这张证书 TBS 的 PKCS#1 v1.5 DigestInfo，写成 `power.conf` 里那一条 `[Result]` 规则。
@@ -118,7 +108,7 @@ pwsh ./tests/smoke-test.ps1 -Dist ./dist
 # 期望：without agent -> false；with agent -> true；license -> true
 ```
 
-## 7. 故障排查
+## 5. 故障排查
 
 | 现象 | 原因 / 处理 |
 |---|---|
@@ -129,13 +119,8 @@ pwsh ./tests/smoke-test.ps1 -Dist ./dist
 | 找不到产品 | `.home` 指向的目录里没有 `bin`；用 `-LayoutRoot` 指到真正的 `%LOCALAPPDATA%\JetBrains`，或手工把 `-javaagent` 加到对应 vmoptions |
 | 两个 agent 打架 | 安装器会删掉所有 `-javaagent:*.jar` 行再加自己的；如仍有旧工具，先跑它的卸载 |
 
-## 8. 安全边界（说清楚）
 
-- **发布资产可被替换**：有仓库写权限的人能重传同一 tag 的资产。对策见第 4 节（tag 保护 + checksums 进 git + 签名）。
-- **脚本以管理员运行**：它要改 `%ProgramData%`、`%APPDATA%`、安装目录的 vmoptions；执行前请自己读一遍（全仓库不到 2000 行，无混淆）。
-- **agent 拥有 JVM 内全权限**：它能读写 IDE 进程里的源码、凭据、剪贴板。本仓库的版本除安装期下载外不联网，也没有遥测代码，但这是"你信这个仓库"而不是"技术上不可能"。
-- **不含任何密钥**：`state/` 里的私钥只在本机生成；发布物只有公开的 CA 模数。
 
-## 9. 第三方组件
+## 6. 说明
 
 `payload/ja-netfilter.jar` 与 `payload/plugins/*.jar` 来自 ja-netfilter 项目及其社区插件，版权归各自作者；本仓库只做打包、安装器、身份/许可证生成与校验逻辑。`src/` 下的代码为本仓库新增。

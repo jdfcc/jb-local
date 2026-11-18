@@ -15,7 +15,7 @@
 set -euo pipefail
 
 REPO_DEFAULT="jdfcc/jb-local"
-TAG_DEFAULT="v1.0.0"
+TAG_DEFAULT="v1.0.1"
 REPO="$REPO_DEFAULT"
 TAG="$TAG_DEFAULT"
 LICENSE_NAME="local"

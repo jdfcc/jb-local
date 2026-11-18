@@ -1,39 +1,122 @@
 <#
   jb-local - self-hosted Windows installer
 
-  Downloads a pinned release from YOUR GitHub repo, verifies its SHA256,
-  installs the JVM agent, generates a local identity + power.conf on this
-  machine, patches JetBrains vmoptions and writes <product>.key files.
+  One command (no download, no temp file):
 
-  Nothing is fetched at run time except the release assets you pinned.
-  No private key ships in the release: it is generated here, once.
+      irm https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.ps1 | iex
 
-  Usage (after downloading and checking the hash):
-      powershell -ExecutionPolicy Bypass -File .\install.ps1 -Repo jdfcc/jb-local -Tag v1.0.0
+  There is deliberately no param() block: Invoke-Expression cannot bind
+  parameters. Options therefore come from
 
-  Uninstall:
+    * -File arguments, when the script was saved to disk, or
+    * JB_LOCAL_* environment variables, when it is piped into iex:
+
+      $env:JB_LOCAL_DRYRUN=1;      irm .../install.ps1 | iex
+      $env:JB_LOCAL_SKIP_HIDING=1; irm .../install.ps1 | iex
+      $env:JB_LOCAL_INSTALL_DIR='D:\jb-local'; irm .../install.ps1 | iex
+      $env:JB_LOCAL_UNINSTALL=1;   irm .../install.ps1 | iex
+
+  Env vars: JB_LOCAL_REPO JB_LOCAL_TAG JB_LOCAL_INSTALL_DIR JB_LOCAL_LAYOUT_ROOT
+            JB_LOCAL_CONFIG_ROOT JB_LOCAL_PAYLOAD JB_LOCAL_NAME JB_LOCAL_EXPIRY
+            JB_LOCAL_SKIP_HIDING JB_LOCAL_NO_VMOPTIONS JB_LOCAL_UNINSTALL
+            JB_LOCAL_DRYRUN JB_LOCAL_NOELEVATE   (=1 to enable)
+
+  Uninstall from disk:
       powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
 #>
-[CmdletBinding()]
-param(
-    [string]$Repo = 'jdfcc/jb-local',
-    [string]$Tag = 'v1.0.0',
-    [string]$InstallDir = (Join-Path $env:ProgramData 'jb-local'),
-    [string]$LayoutRoot = (Join-Path $env:LOCALAPPDATA 'JetBrains'),
-    [string]$ConfigRoot = (Join-Path $env:APPDATA 'JetBrains'),
-    [string]$LocalPayload = '',
-    [string]$LicenseName = 'local',
-    [string]$Expiry = '2099-12-31',
-    [switch]$SkipHiding,
-    [switch]$NoVmOptions,
-    [switch]$Uninstall,
-    [switch]$DryRun,
-    [switch]$NoElevate
-)
 
+
+# --------------------------------------------------------------------- options
+
+$__jbArgs = @($args)
+
+& {
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$Cfg = [ordered]@{
+    Repo         = 'jdfcc/jb-local'
+    Tag          = 'v1.0.1'
+    InstallDir   = (Join-Path $env:ProgramData 'jb-local')
+    LayoutRoot   = (Join-Path $env:LOCALAPPDATA 'JetBrains')
+    ConfigRoot   = (Join-Path $env:APPDATA 'JetBrains')
+    LocalPayload = ''
+    LicenseName  = 'local'
+    Expiry       = '2099-12-31'
+    Subject      = ''
+    SkipHiding   = $false
+    NoVmOptions  = $false
+    Uninstall    = $false
+    DryRun       = $false
+    NoElevate    = $false
+}
+
+$envMap = [ordered]@{
+    JB_LOCAL_REPO        = 'Repo'
+    JB_LOCAL_TAG         = 'Tag'
+    JB_LOCAL_INSTALL_DIR = 'InstallDir'
+    JB_LOCAL_LAYOUT_ROOT = 'LayoutRoot'
+    JB_LOCAL_CONFIG_ROOT = 'ConfigRoot'
+    JB_LOCAL_PAYLOAD     = 'LocalPayload'
+    JB_LOCAL_NAME        = 'LicenseName'
+    JB_LOCAL_EXPIRY      = 'Expiry'
+    JB_LOCAL_SKIP_HIDING = 'SkipHiding'
+    JB_LOCAL_NO_VMOPTIONS= 'NoVmOptions'
+    JB_LOCAL_UNINSTALL   = 'Uninstall'
+    JB_LOCAL_DRYRUN      = 'DryRun'
+    JB_LOCAL_NOELEVATE   = 'NoElevate'
+}
+
+foreach ($envName in $envMap.Keys) {
+    $value = [Environment]::GetEnvironmentVariable($envName)
+    if ([string]::IsNullOrEmpty($value)) { continue }
+    $target = $envMap[$envName]
+    if ($Cfg[$target] -is [bool]) {
+        $Cfg[$target] = ($value -notin @('0', 'false', 'no', 'off'))
+    } else {
+        $Cfg[$target] = $value
+    }
+}
+
+$argMap = @{
+    repo = 'Repo'; tag = 'Tag'; installdir = 'InstallDir'; layoutroot = 'LayoutRoot'
+    configroot = 'ConfigRoot'; localpayload = 'LocalPayload'; licensename = 'LicenseName'
+    name = 'LicenseName'; expiry = 'Expiry'; subject = 'Subject'
+    skiphiding = 'SkipHiding'; novmoptions = 'NoVmOptions'; uninstall = 'Uninstall'
+    dryrun = 'DryRun'; noelevate = 'NoElevate'
+}
+$switchNames = @('skiphiding', 'novmoptions', 'uninstall', 'dryrun', 'noelevate')
+
+if ($__jbArgs.Count -gt 0) {
+    for ($i = 0; $i -lt $args.Count; $i++) {
+        $raw = [string]$__jbArgs[$i]
+        if ($raw -notmatch '^--?(.+)$') { continue }
+        $name = $Matches[1].ToLowerInvariant()
+        if (-not $argMap.ContainsKey($name)) { continue }
+        $target = $argMap[$name]
+        if ($switchNames -contains $name) {
+            $Cfg[$target] = $true
+        } elseif ($i + 1 -lt $__jbArgs.Count -and ([string]$__jbArgs[$i + 1]) -notmatch '^--?[A-Za-z]') {
+            $Cfg[$target] = [string]$__jbArgs[$i + 1]
+            $i++
+        }
+    }
+}
+
+$Repo = $Cfg.Repo
+$Tag = $Cfg.Tag
+$InstallDir = $Cfg.InstallDir
+$LayoutRoot = $Cfg.LayoutRoot
+$ConfigRoot = $Cfg.ConfigRoot
+$LocalPayload = $Cfg.LocalPayload
+$LicenseName = $Cfg.LicenseName
+$Expiry = $Cfg.Expiry
+$Subject = $Cfg.Subject
+$SkipHiding = $Cfg.SkipHiding
+$NoVmOptions = $Cfg.NoVmOptions
+$Uninstall = $Cfg.Uninstall
+$DryRun = $Cfg.DryRun
+$NoElevate = $Cfg.NoElevate
 
 $Products = [ordered]@{
     'idea'      = 'II,PCWMP,PSI'
@@ -49,7 +132,6 @@ $Products = [ordered]@{
     'dataspell' = 'DS,PSI,PDB,PCWMP'
     'rustrover' = 'RR,PSI,PCWP'
 }
-
 function Say([string]$msg) { Write-Host "[jb-local] $msg" }
 function Step([string]$msg) { Write-Host "[jb-local] == $msg" -ForegroundColor Cyan }
 
@@ -59,17 +141,29 @@ function Test-Admin {
 }
 
 function Invoke-Elevated {
-    $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Repo `"$Repo`" -Tag `"$Tag`" -InstallDir `"$InstallDir`" -LicenseName `"$LicenseName`" -Expiry `"$Expiry`""
-    if ($SkipHiding) { $argLine += ' -SkipHiding' }
-    if ($NoVmOptions) { $argLine += ' -NoVmOptions' }
-    if ($Uninstall) { $argLine += ' -Uninstall' }
-    if ($DryRun) { $argLine += ' -DryRun' }
-    if ($LayoutRoot) { $argLine += " -LayoutRoot `"$LayoutRoot`"" }
-    if ($ConfigRoot) { $argLine += " -ConfigRoot `"$ConfigRoot`"" }
-    if ($LocalPayload) { $argLine += " -LocalPayload `"$LocalPayload`"" }
+    $selfUrl = "https://github.com/$($Cfg.Repo)/releases/download/$($Cfg.Tag)/install.ps1"
+    if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+        # running from disk: re-run the same file with the same options
+        $pairs = @(
+            '-Repo', $Cfg.Repo, '-Tag', $Cfg.Tag, '-InstallDir', $Cfg.InstallDir,
+            '-LayoutRoot', $Cfg.LayoutRoot, '-ConfigRoot', $Cfg.ConfigRoot,
+            '-LicenseName', $Cfg.LicenseName, '-Expiry', $Cfg.Expiry
+        )
+        if ($Cfg.LocalPayload) { $pairs += @('-LocalPayload', $Cfg.LocalPayload) }
+        if ($Cfg.Subject) { $pairs += @('-Subject', $Cfg.Subject) }
+        if ($Cfg.SkipHiding) { $pairs += '-SkipHiding' }
+        if ($Cfg.NoVmOptions) { $pairs += '-NoVmOptions' }
+        if ($Cfg.Uninstall) { $pairs += '-Uninstall' }
+        if ($Cfg.DryRun) { $pairs += '-DryRun' }
+        $quoted = ($pairs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
+        $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $quoted"
+    } else {
+        # running from memory (irm | iex): fetch the same script again, elevated
+        $argLine = "-NoProfile -ExecutionPolicy Bypass -Command `"irm '$selfUrl' | iex`""
+    }
     Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $argLine | Out-Null
-    exit 0
 }
+
 
 function Assert-Hash([string]$File, [string]$SumsPath) {
     $name = Split-Path $File -Leaf
@@ -147,7 +241,7 @@ function Get-JetBrainsLayout {
 function Set-VmOptions([string]$File, [string]$AgentLine) {
     $content = @(Get-Content -Path $File -ErrorAction Stop)
     $backup = "$File.bak-jblocal"
-    if (-not (Test-Path $backup)) { Copy-Item $File $backup -Force }
+    if (-not $DryRun -and -not (Test-Path $backup)) { Copy-Item $File $backup -Force }
     $filtered = $content | Where-Object { $_ -notmatch '^\s*-javaagent:.*\.jar' }
     $lines = @($filtered) + $AgentLine
     if (-not $DryRun) {
@@ -158,12 +252,13 @@ function Set-VmOptions([string]$File, [string]$AgentLine) {
 
 # --------------------------------------------------------------------------- main
 
-if (-not (Test-Admin) -and -not $DryRun -and -not $NoElevate) { Invoke-Elevated }
+if (-not (Test-Admin) -and -not $DryRun -and -not $NoElevate) { Invoke-Elevated; return }
 
 $work = Join-Path $env:TEMP ("jb-local-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 
 try {
+    if ($env:JB_LOCAL_DEBUG) { Say ("config: repo={0} tag={1} install={2} layout={3} config={4} dryrun={5} noelevate={6}" -f $Repo,$Tag,$InstallDir,$LayoutRoot,$ConfigRoot,$DryRun,$NoElevate) }
     Step 'layout'
     $layout = @(Get-JetBrainsLayout)
     if ($layout.Count -eq 0) { Say 'no JetBrains product found under %LOCALAPPDATA%\JetBrains'; }
@@ -300,9 +395,11 @@ try {
     Step 'done'
     Say "installed: $InstallDir"
     Say "keys: $minted"
-    Say ("installer sha256: " + (Get-FileHash $PSCommandPath -Algorithm SHA256).Hash)
+    if ($PSCommandPath -and (Test-Path $PSCommandPath)) { Say ("installer sha256: " + (Get-FileHash $PSCommandPath -Algorithm SHA256).Hash) } else { Say "installer: running from memory (irm | iex)" }
     Say 'start the IDE and check Help > Register'
 }
 finally {
     if (Test-Path $work) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
 }
+} @__jbArgs
+Remove-Variable __jbArgs -ErrorAction SilentlyContinue
