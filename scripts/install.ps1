@@ -41,6 +41,7 @@ $Cfg = [ordered]@{
     LayoutRoot   = (Join-Path $env:LOCALAPPDATA 'JetBrains')
     ConfigRoot   = (Join-Path $env:APPDATA 'JetBrains')
     LocalPayload = ''
+    BaseUrl      = ''
     LicenseName  = 'local'
     Expiry       = '2099-12-31'
     Subject      = ''
@@ -58,6 +59,7 @@ $envMap = [ordered]@{
     JB_LOCAL_LAYOUT_ROOT = 'LayoutRoot'
     JB_LOCAL_CONFIG_ROOT = 'ConfigRoot'
     JB_LOCAL_PAYLOAD     = 'LocalPayload'
+    JB_LOCAL_BASE_URL    = 'BaseUrl'
     JB_LOCAL_NAME        = 'LicenseName'
     JB_LOCAL_EXPIRY      = 'Expiry'
     JB_LOCAL_SKIP_HIDING = 'SkipHiding'
@@ -80,7 +82,7 @@ foreach ($envName in $envMap.Keys) {
 
 $argMap = @{
     repo = 'Repo'; tag = 'Tag'; installdir = 'InstallDir'; layoutroot = 'LayoutRoot'
-    configroot = 'ConfigRoot'; localpayload = 'LocalPayload'; licensename = 'LicenseName'
+    configroot = 'ConfigRoot'; localpayload = 'LocalPayload'; baseurl = 'BaseUrl'; licensename = 'LicenseName'
     name = 'LicenseName'; expiry = 'Expiry'; subject = 'Subject'
     skiphiding = 'SkipHiding'; novmoptions = 'NoVmOptions'; uninstall = 'Uninstall'
     dryrun = 'DryRun'; noelevate = 'NoElevate'
@@ -109,6 +111,7 @@ $InstallDir = $Cfg.InstallDir
 $LayoutRoot = $Cfg.LayoutRoot
 $ConfigRoot = $Cfg.ConfigRoot
 $LocalPayload = $Cfg.LocalPayload
+$BaseUrl = $Cfg.BaseUrl
 $LicenseName = $Cfg.LicenseName
 $Expiry = $Cfg.Expiry
 $Subject = $Cfg.Subject
@@ -132,6 +135,11 @@ $Products = [ordered]@{
     'dataspell' = 'DS,PSI,PDB,PCWMP'
     'rustrover' = 'RR,PSI,PCWP'
 }
+function Get-AssetUrl([string]$name) {
+    if ($Cfg.BaseUrl) { return ($Cfg.BaseUrl.TrimEnd('/') + '/' + $name) }
+    return "https://github.com/$($Cfg.Repo)/releases/download/$($Cfg.Tag)/$name"
+}
+
 function Say([string]$msg) { Write-Host "[jb-local] $msg" }
 function Step([string]$msg) { Write-Host "[jb-local] == $msg" -ForegroundColor Cyan }
 
@@ -141,7 +149,7 @@ function Test-Admin {
 }
 
 function Invoke-Elevated {
-    $selfUrl = "https://github.com/$($Cfg.Repo)/releases/download/$($Cfg.Tag)/install.ps1"
+    $selfUrl = Get-AssetUrl 'install.ps1'
     if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
         # running from disk: re-run the same file with the same options
         $pairs = @(
@@ -149,6 +157,7 @@ function Invoke-Elevated {
             '-LayoutRoot', $Cfg.LayoutRoot, '-ConfigRoot', $Cfg.ConfigRoot,
             '-LicenseName', $Cfg.LicenseName, '-Expiry', $Cfg.Expiry
         )
+        if ($Cfg.BaseUrl) { $pairs += @('-BaseUrl', $Cfg.BaseUrl) }
         if ($Cfg.LocalPayload) { $pairs += @('-LocalPayload', $Cfg.LocalPayload) }
         if ($Cfg.Subject) { $pairs += @('-Subject', $Cfg.Subject) }
         if ($Cfg.SkipHiding) { $pairs += '-SkipHiding' }
@@ -159,7 +168,8 @@ function Invoke-Elevated {
         $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $quoted"
     } else {
         # running from memory (irm | iex): fetch the same script again, elevated
-        $argLine = "-NoProfile -ExecutionPolicy Bypass -Command `"irm '$selfUrl' | iex`""
+        $pre = if ($Cfg.BaseUrl) { "`$env:JB_LOCAL_BASE_URL='$($Cfg.BaseUrl)'; " } else { '' }
+        $argLine = "-NoProfile -ExecutionPolicy Bypass -Command `"$pre irm '$selfUrl' | iex`""
     }
     Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $argLine | Out-Null
 }
@@ -258,7 +268,7 @@ $work = Join-Path $env:TEMP ("jb-local-" + [Guid]::NewGuid().ToString('N').Subst
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 
 try {
-    if ($env:JB_LOCAL_DEBUG) { Say ("config: repo={0} tag={1} install={2} layout={3} config={4} dryrun={5} noelevate={6}" -f $Repo,$Tag,$InstallDir,$LayoutRoot,$ConfigRoot,$DryRun,$NoElevate) }
+    if ($env:JB_LOCAL_DEBUG) { Say ("config: repo={0} tag={1} install={2} layout={3} config={4} dryrun={5} noelevate={6} base={7}" -f $Repo,$Tag,$InstallDir,$LayoutRoot,$ConfigRoot,$DryRun,$NoElevate,$BaseUrl) }
     Step 'layout'
     $layout = @(Get-JetBrainsLayout)
     if ($layout.Count -eq 0) { Say 'no JetBrains product found under %LOCALAPPDATA%\JetBrains'; }
@@ -306,8 +316,8 @@ try {
         Say "local payload: $src"
         Assert-Hash -File $zip -SumsPath $sums
     } else {
-        $sumsUrl = "https://github.com/$Repo/releases/download/$Tag/SHA256SUMS.txt"
-        $zipUrl = "https://github.com/$Repo/releases/download/$Tag/payload.zip"
+        $sumsUrl = Get-AssetUrl 'SHA256SUMS.txt'
+        $zipUrl = Get-AssetUrl 'payload.zip'
         Get-VerifiedDownload -Url $sumsUrl -Dest $sums -SumsPath $sums -NoHash
         Get-VerifiedDownload -Url $zipUrl -Dest $zip -SumsPath $sums
     }

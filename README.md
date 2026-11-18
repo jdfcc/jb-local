@@ -40,7 +40,18 @@ irm https://github.com/jdfcc/jb-local/releases/download/v1.0.1/install.ps1 | iex
 | 完全离线 | `$env:JB_LOCAL_PAYLOAD='D:\dist'; irm ... \| iex` |
 | 排错（打印生效配置） | `$env:JB_LOCAL_DEBUG=1; irm ... \| iex` |
 
-其余可覆盖项：`JB_LOCAL_REPO` `JB_LOCAL_TAG` `JB_LOCAL_LAYOUT_ROOT` `JB_LOCAL_CONFIG_ROOT` `JB_LOCAL_NOELEVATE`。
+其余可覆盖项：`JB_LOCAL_REPO` `JB_LOCAL_TAG` `JB_LOCAL_BASE_URL` `JB_LOCAL_LAYOUT_ROOT` `JB_LOCAL_CONFIG_ROOT` `JB_LOCAL_NOELEVATE`。
+
+### 托管在别处（自己的 VPS / 对象存储 / 内网）
+
+资产只要三个文件同目录：`install.ps1`、`payload.zip`、`SHA256SUMS.txt`。放到任意 HTTPS 静态目录后：
+
+```powershell
+$env:JB_LOCAL_BASE_URL='https://files.example.com/jb-local'
+irm "$env:JB_LOCAL_BASE_URL/install.ps1" | iex
+```
+
+完全不依赖 GitHub；安装器里的 `payload.zip` / `SHA256SUMS.txt` 地址也会跟着走。
 
 ### Windows：存盘执行（可先核对哈希）
 

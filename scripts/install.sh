@@ -25,6 +25,7 @@ NO_VMOPTIONS=0
 UNINSTALL=0
 DRY_RUN=0
 FROM_DIR=""
+BASE_URL=""
 CFG_OVERRIDE=""
 LOCAL_PREFIX_OVERRIDE=""
 
@@ -53,6 +54,7 @@ while [ $# -gt 0 ]; do
     --uninstall) UNINSTALL=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --from-dir) FROM_DIR="$2"; shift 2 ;;
+    --base-url) BASE_URL="$2"; shift 2 ;;
     --config-root) CFG_OVERRIDE="$2"; shift 2 ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -146,8 +148,13 @@ if [ -n "$FROM_DIR" ]; then
   cp -f "$FROM_DIR/SHA256SUMS.txt" "$WORK/SHA256SUMS.txt"
   say "local payload: $FROM_DIR"
 else
-  SUMS_URL="https://github.com/$REPO/releases/download/$TAG/SHA256SUMS.txt"
-  ZIP_URL="https://github.com/$REPO/releases/download/$TAG/payload.zip"
+  if [ -n "$BASE_URL" ]; then
+    SUMS_URL="${BASE_URL%/}/SHA256SUMS.txt"
+    ZIP_URL="${BASE_URL%/}/payload.zip"
+  else
+    SUMS_URL="https://github.com/$REPO/releases/download/$TAG/SHA256SUMS.txt"
+    ZIP_URL="https://github.com/$REPO/releases/download/$TAG/payload.zip"
+  fi
   say "download $SUMS_URL"
   curl -fsSL -o "$WORK/SHA256SUMS.txt" "$SUMS_URL"
   say "download $ZIP_URL"
